@@ -165,6 +165,9 @@ to hire
   [
     if MC < MR
     [
+      let hiring_firm self
+      ;user-message (word "hey1")
+      ;while [any? employees with [employed = false]]
       ask employees
       [
         if employed = false
@@ -177,6 +180,19 @@ to hire
           ]
         ]
       ]
+      ;ask one-of employees with [employed = false]
+      ;[
+        ;user-message (word "hey3")
+        ;let temp_hiring self
+        ;create-link-with hiring_firm
+        ;ask temp_hiring [set employed true]
+
+        ;ask hiring_firm
+        ;[
+          ;user-message (word "hey4")
+          ;set num-employee num-employee + 1
+        ;]
+      ;]
     ]
   ]
 end
