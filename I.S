@@ -1,10 +1,17 @@
-globals [salary employmentRate laborForce]
+;global variables that the observer and any agent can access
+globals [salary employmentRate laborForce unemploymentRate]
+
+; creating the breeds of agents
 breed [firms firm]
 breed [employees employee]
 
-firms-own [profit product-sold revenue num-employee quantity MR MC]
-employees-own [spendingMoney currentMoney employed working]
+; variables owned by the firm agents
+firms-own [profit product-sold revenue num-employee MR MC product-made]
 
+; variables owned by the employee agents
+employees-own [currentMoney employed]
+
+;function call sets up the simulation.
 to setup
   clear-all
   reset-ticks
@@ -24,11 +31,14 @@ to setup
 
   set laborForce (count employees)
   set employmentRate (count employees with [employed = true] / laborForce) * 100
+  set unemploymentRate (count employees with [employed = false] / laborForce) * 100
   ask firms [set MC min-wage]
+  ask firms [set MR price]
   assign-employee
   firm-color
 end
 
+; spawns the correct amount of firms based on the firm-amount variable
 to repeatloop
   setxy 0 0
   set shape "house"
@@ -47,129 +57,136 @@ to repeatloop
   ]
 end
 
+;simulation loop
 to go
+  ask firms [set MC min-wage]
+  ; resets the products sold and made
+  ask firms [set product-sold 0]
+  ask firms [set product-made 0]
+
   calculate-salary
   calculate-money
-  calculate-spend
   ProductionDecrease
+  buy-cycle
   calculate-revenue
   calculate-profit
-  buy-cycle
-  firm-color
   fire
   hire
+  firm-color
 
-
-;  ask employee 100 [set employed false]
-;  ask employee 101 [set employed false]
-;  ask employee 102 [set employed false]
-;  ask employee 103 [set employed false]
-;  ask employee 104 [set employed false]
-;  ask employee 105 [set employed false]
-;  ask employee 106 [set employed false]
-;  ask employee 107 [set employed false]
   set employmentRate (count employees with [employed = true] / laborForce) * 100
+  set unemploymentRate (count employees with [employed = false] / laborForce) * 100
 
-  tick
+  tick ; time goes forward
 end
 
+; calculates the revenue of firms. Adds the current revenue plus the TR formula (price * quantity sold)
 to calculate-revenue
-  ;ask firms [set revenue product-sold * price * num-employee]
   ask firms
   [
     if num-employee > 0
     [
-      set revenue precision (price * (sqrt(num-employee)) * product-sold) 2
+      set revenue precision (revenue + (price * product-sold) )2
     ]
-    if num-employee <= 0
+    if num-employee <= 0 ; if the firm has no employees it cannot sell goods, thus it has sold nothing and it's revenue is 0
     [
-      set revenue precision (price * num-employee * product-sold) 2
+      ; this is not setting the entire value to 0 as the firm may previously have had revenue and that information may be valuable to keep track of
+      set revenue precision (revenue + (price * 0 * product-sold)) 2
     ]
   ]
 end
 
+; calculates the profit of firm agents by subtracting costs of business (i.e. employee costs) from revenue
 to calculate-profit
   ask firms [set profit precision (revenue - (num-employee * salary)) 2]
-  ;ask firms [set profit (price * quantity) - (num-employee * salary)]
-  ;ask firms [ set profit (price * (sqrt(num-emplyee) * 0.5) - salary)]
 end
 
-to calculate-spend
-  ask employees [set spendingMoney precision ((percent-spend * currentMoney) / 100) 2]
-  ;ask employees [set currentMoney currentMoney - spendingMoney]
-end
-
+;calculates the marginal revenue of the firm
 to ProductionDecrease
   ask firms
   [
-    ;set quantity sqrt(num-employee)
-    ;let derivative price * quantity * 0.5 - salary
     if num-employee > 0
     [
       set MR precision (price / sqrt(num-employee)) 2
+      set product-made precision (num-employee * sqrt(num-employee)) 1
+    ]
+
+    if num-employee <= 0
+    [
+      set MR price
     ]
   ]
 end
 
+; implements employees buying items from stores
 to buy-cycle
   ask employees
   [
-    let n  precision (spendingMoney / price) 2
+    let n  precision (currentMoney / price) 2 ; employees buy as many times as they can
     repeat n
     [
       ask n-of firm-amount firms
       [
-        if(num-employee >= 1)
+        if(num-employee >= 1 and product-made > 1)
         [
-          set product-sold (product-sold + 1)
+          set product-made (product-made - 1)
+          set product-sold (product-sold + 1) ; increments for each individual firm how much product was bought during that cycle
         ]
-        ;set quantity product-sold
-       ; set globalxy xcor, ycor
       ]
-      ;move-to badglobalxy
-      ;set currentMoney (currentMoney - (n * price))
     ]
-    ;set currentMoney (currentMoney - spendingMoney)
-    set currentMoney precision (currentMoney - (n * price)) 2
+    set currentMoney precision (currentMoney - (n * price)) 2 ;subtracts the amount spent on products from employees money total
   ]
-  ;ask firms [set product-sold ]
 end
+
+; calculates the amount of money a person has after a pay period
 
 to calculate-money
-  ask employees [set currentMoney precision (currentMoney + salary) 2]
+  ask employees [
+    if employed = true
+    [
+         set currentMoney precision (currentMoney + salary) 2
+    ]
+  ]
 end
 
+; calculates an employee's salary
 to calculate-salary
   ask employees [set salary precision (min-wage * hours-worked) 2]
 end
 
+; assigns employees to firms at the beginning of the simulation
 to assign-employee
   ask employees
   [
     if employed = false
     [
       let selected_employee self
-      ;ask n-of firm-amount firms
       ask one-of firms
       [
         create-link-with selected_employee
         set num-employee num-employee + 1
-        ask selected_employee [set employed true]
+        ask selected_employee
+        [
+          set employed true
+        ]
       ]
     ]
   ]
 end
 
+; hires employees if Marginal Cost is less than or equal to Marginal Revenue
 to hire
   ask firms
   [
-    if MC < MR
+    if MC <= MR
     [
-      ask employees
+      let hiring_firm self
+      let hireable_employees count employees with [employed = false]
+      if (hireable_employees >= 1) ; if it can hire multiple employees it chooses one random employee
       [
-        if employed = false
+        ask one-of employees with [employed = false]
         [
-          create-link-with one-of firms with [MC < MR]
+          create-link-with hiring_firm
           set employed true
           ask one-of my-links
           [
@@ -178,18 +195,19 @@ to hire
         ]
       ]
     ]
-  ]
+   ]
 end
 
+; changes the color of the firm depending on how many employees they have
 to firm-color
   ask firms
   [
-    if (num-employee >= 2)
+    if (num-employee >= 10)
     [
       set color blue
     ]
 
-    if (num-employee = 1)
+    if (num-employee > 1 and num-employee < 10)
     [
       set color red
     ]
@@ -201,6 +219,8 @@ to firm-color
   ]
 end
 
+
+;fires workers if the marginal cost is greater than the marginal revenue
 to fire
   ask firms
   [
@@ -210,9 +230,6 @@ to fire
       [
         ask other-end [set employed false]
         die
-        ;ask firm 44 [ ask one-of my-links [ ask other-end [ set color red] ] ]
-        ;ask firm 44 [ ask one-of my-links [ ask other-end [set currentmoney 20] ]]
-        ;let selected_employee one-of links
       ]
       set num-employee num-employee - 1
     ]
@@ -255,7 +272,7 @@ firm-amount
 firm-amount
 0
 100
-8.0
+20.0
 1
 1
 NIL
@@ -266,7 +283,7 @@ MONITOR
 50
 73
 95
-days
+Days
 ticks
 0
 1
@@ -291,29 +308,14 @@ NIL
 
 SLIDER
 19
-141
+139
 191
-174
-employing
-employing
-0
-100
-15.0
-1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-20
-183
-192
-216
+172
 consumer-amount
 consumer-amount
 0
-100
-25.0
+400
+300.0
 1
 1
 NIL
@@ -355,55 +357,40 @@ PENS
 "default" 1.0 0 -16777216 true "plot employmentRate" "plot employmentRate"
 
 SLIDER
-21
-224
-193
-257
-price
-price
-0
-100
-8.0
-1
-1
-NIL
-HORIZONTAL
-
-SLIDER
 20
-263
+180
 192
-296
+213
+price
+price
+0
+100
+45.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+19
+219
+191
+252
 min-wage
 min-wage
 0
 100
-7.0
+7.25
 1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-21
-309
-193
-342
-startingMoney
-startingMoney
-25
-100
-25.0
-1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-24
-357
-196
-390
+19
+307
+191
+340
 hours-worked
 hours-worked
 8
@@ -415,34 +402,37 @@ NIL
 HORIZONTAL
 
 SLIDER
-23
-400
-195
-433
-percent-spend
-percent-spend
-40
+20
+265
+192
+298
+startingMoney
+startingMoney
+0
 100
-40.0
+0.0
 1
 1
 NIL
 HORIZONTAL
 
-SLIDER
-23
-444
-195
-477
-DMR%
-DMR%
-0
-100
+PLOT
+679
+192
+879
+342
+UnemploymentRate
+Days
+Unemployment Rate
+0.0
 10.0
-1
-1
-NIL
-HORIZONTAL
+0.0
+10.0
+true
+false
+"" "plot unemploymentRate"
+PENS
+"default" 1.0 0 -16777216 true "" "plot unemploymentRate"
 
 @#$#@#$#@
 ## WHAT IS IT?
